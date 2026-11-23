@@ -2,16 +2,19 @@
 # dvarapala's sudo stand-in. install.sh puts it root-owned at
 # /usr/local/bin/sudo, ahead of /usr/bin/sudo in PATH.
 #
-# Outside an agent sandbox it is plain sudo: it hands every argument to
-# /usr/bin/sudo and gets out of the way.
+# For a person it is plain sudo: it hands every argument to /usr/bin/sudo and
+# gets out of the way.
 #
-# Inside one (the no_new_privs flag is set, as in Claude Code, Codex and the
-# Claude desktop app), real sudo can't work at all: the kernel refuses its
-# setuid. Instead of sudo's cryptic error, the agent learns how to ask the
-# user properly, so nobody has to tell each agent about dvarapala.
-if grep -qs '^NoNewPrivs:[[:space:]]*1' /proc/self/status; then
-  cat >&2 <<'EOF'
-sudo: can't work here: this agent sandbox blocks privilege escalation (no_new_privs).
+# An AI agent can't type a password, and often can't use sudo at all, so
+# instead of sudo's cryptic error it learns how to ask the user properly, and
+# nobody has to tell each agent about dvarapala. That's the case when:
+#   - the no_new_privs flag is set (Claude Code, Codex, the Claude desktop
+#     app): the kernel refuses sudo's setuid, so it can never work; or
+#   - there's no terminal to ask for a password on, sudo would need one, and
+#     the caller gave no other way (-S, -A): sudo would only fail.
+hint() {
+  cat >&2 <<EOF
+sudo: $1
 To run something as root, ask the user through dvarapala instead:
   - MCP tool:  request_commands (server "dvarapala"), or
   - shell:     dvarapala --requester "<your name>" --why "<what it does and why>" --cmd "<command>"
@@ -19,5 +22,32 @@ The user approves it in a window; if they deny it, the result's "feedback" says 
 Don't ask the user to paste commands into a terminal.
 EOF
   exit 1
+}
+
+nnp=$(sed -n 's/^NoNewPrivs:[[:space:]]*//p' /proc/self/status 2>/dev/null)
+[ -n "${DVARAPALA_SUDO_HINT_TEST_NNP:-}" ] && nnp=$DVARAPALA_SUDO_HINT_TEST_NNP   # tests only
+if [ "$nnp" = 1 ]; then
+  hint "can't work here: this agent sandbox blocks privilege escalation (no_new_privs)."
+fi
+
+# The caller brings its own way to give the password: plain sudo.
+for a in "$@"; do
+  case $a in
+    --) break ;;
+    -S|--stdin|-A|--askpass) exec /usr/bin/sudo "$@" ;;
+    --*) ;;
+    -*S*|-*A*) exec /usr/bin/sudo "$@" ;;
+    -*) ;;
+    *) break ;;
+  esac
+done
+
+# No controlling terminal: sudo could only succeed without a password. (In a
+# subshell: in dash, a failed redirection on a builtin would end the script.)
+if [ "$(id -u)" != 0 ] && [ -z "${SUDO_ASKPASS:-}" ] && ! (exec </dev/tty) 2>/dev/null; then
+  if /usr/bin/sudo -n true 2>/dev/null; then
+    exec /usr/bin/sudo "$@"
+  fi
+  hint "no terminal to ask for a password on (an AI agent can't type one)."
 fi
 exec /usr/bin/sudo "$@"

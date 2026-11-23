@@ -104,6 +104,24 @@ class SudoHint(unittest.TestCase):
             # Outside a sandbox it is /usr/bin/sudo itself: never the hint.
             self.assertNotIn("request_commands", r.stderr)
 
+    def test_hint_without_a_terminal_outside_a_sandbox(self):
+        # An agent outside a sandbox: no tty (setsid detaches it), and sudo
+        # can't run without a password here, so the hint, not sudo's error.
+        env = dict(os.environ, DVARAPALA_SUDO_HINT_TEST_NNP="0")
+        r = subprocess.run(["setsid", "-w", "sh", str(self.HINT), "true"], capture_output=True,
+                           text=True, stdin=subprocess.DEVNULL, timeout=20, env=env)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("no terminal to ask for a password on", r.stderr)
+        self.assertIn("request_commands", r.stderr)
+
+    def test_password_from_stdin_or_askpass_is_plain_sudo(self):
+        # -S / -A bring their own password: never the no-terminal hint.
+        env = dict(os.environ, DVARAPALA_SUDO_HINT_TEST_NNP="0")
+        for flags in (["-S"], ["-kS"], ["--askpass"]):
+            r = subprocess.run(["setsid", "-w", "sh", str(self.HINT), *flags, "true"], capture_output=True,
+                               text=True, stdin=subprocess.DEVNULL, timeout=20, env=env)
+            self.assertNotIn("no terminal to ask for a password on", r.stderr, flags)
+
     def test_installer_marker_matches(self):
         # install.sh only replaces or removes a /usr/local/bin/sudo carrying this marker.
         marker = "dvarapala's sudo stand-in"

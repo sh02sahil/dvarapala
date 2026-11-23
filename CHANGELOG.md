@@ -2,6 +2,17 @@
 
 Newest first. Releases are tags (`vX.Y.Z`) with `VERSION` in `bin/dvarapala`.
 
+## v1.10.1 -- 2026-11-23
+
+- **The sudo stand-in also catches agents outside a sandbox.** With no
+  controlling terminal to ask for a password on, sudo can only fail unless no
+  password is needed; then the stand-in runs plain sudo (cached or NOPASSWD
+  credentials), and otherwise tells the agent to use dvarapala instead of
+  printing sudo's "a terminal is required". `-S` and `-A` (a password from
+  stdin or an askpass helper) always go straight to sudo.
+- Fixed: in dash, the terminal check's failed redirection ended the script
+  with exit 2 instead of reaching the hint (now checked in a subshell).
+
 ## v1.10.0 -- 2026-11-23
 
 - **Notification first.** A request no longer opens a window that takes the
