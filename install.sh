@@ -18,6 +18,9 @@
 #   /usr/local/lib/dvarapala/{config,data}/  empty XDG dirs for the window, so
 #                                          your GTK CSS can't restyle it
 #   /usr/local/bin/{anumati,vayu-elevate}  -> dvarapala (its old names, kept working)
+#   /usr/local/bin/sudo                      plain sudo, except inside an agent
+#                                          sandbox, where it points the agent at
+#                                          dvarapala (lib/sudo-hint)
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 lib=/usr/local/lib/dvarapala
@@ -26,6 +29,8 @@ mode=${1:-install}
 if [ "$mode" = "--uninstall" ]; then
   sudo rm -rf /usr/local/bin/dvarapala "$lib"
   for old in anumati vayu-elevate; do [ -L "/usr/local/bin/$old" ] && sudo rm -f "/usr/local/bin/$old"; done
+  # Only our stand-in: never a sudo something else put there.
+  if grep -qs "dvarapala's sudo stand-in" /usr/local/bin/sudo; then sudo rm -f /usr/local/bin/sudo; fi
   echo "dvarapala removed (the audit log /var/log/dvarapala.log is kept)"
   exit 0
 fi
@@ -35,7 +40,7 @@ check=false
 n=0
 differs() { n=$((n + 1)); if $check; then echo "differs: $1"; fi; }
 
-# Dependencies: Arch package names; other distributions, see the README.
+# Dependencies: Arch and Debian/Ubuntu package names; others, see the README.
 if command -v pacman >/dev/null; then
   missing=()
   for p in python python-gobject gtk4 libadwaita libnotify sudo; do
@@ -45,6 +50,21 @@ if command -v pacman >/dev/null; then
     differs "packages not installed: ${missing[*]}"
     $check || sudo pacman -S --needed --noconfirm "${missing[@]}"
   fi
+elif command -v apt-get >/dev/null; then
+  missing=()
+  for p in python3 python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 libnotify-bin sudo; do
+    dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q 'install ok installed' || missing+=("$p")
+  done
+  if [ "${#missing[@]}" -gt 0 ]; then
+    differs "packages not installed: ${missing[*]}"
+    $check || sudo apt-get install -y "${missing[@]}"
+  fi
+fi
+# A sudo already in /usr/local/bin that isn't ours: leave it alone.
+sudo_hint=true
+if [ -e /usr/local/bin/sudo ] && ! grep -qs "dvarapala's sudo stand-in" /usr/local/bin/sudo; then
+  sudo_hint=false
+  echo "note: /usr/local/bin/sudo exists and isn't dvarapala's; not replacing it (agents won't get the hint)"
 fi
 
 files=(
@@ -56,6 +76,7 @@ files=(
   "lib/userrun.py:$lib/userrun.py"
   "lib/keys.py:$lib/keys.py"
 )
+$sudo_hint && files+=("lib/sudo-hint:/usr/local/bin/sudo")
 for pair in "${files[@]}"; do
   src=$here/${pair%%:*} dst=${pair#*:}
   if cmp -s "$src" "$dst" 2>/dev/null && [ "$(stat -c '%U %a' "$dst")" = "root 755" ]; then continue; fi

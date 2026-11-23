@@ -2,6 +2,29 @@
 
 Newest first. Releases are tags (`vX.Y.Z`) with `VERSION` in `bin/dvarapala`.
 
+## v1.8.0 -- 2026-11-23
+
+- **Tell the agent why.** A "Note for the agent" field under the commands:
+  why you deny or untick something, or what to do instead. Deny (the button,
+  `q` or `Esc`) now asks for it once before closing: Enter denies with the
+  note, Esc denies without one, so denying stays two keys. `m` jumps to the
+  field from the cards; Enter in it never runs anything. The note comes back
+  in the result as `feedback` and at the end of `message`, with any answer
+  (deny, timeout, or a run with unticked commands), and is kept in your
+  request log. The MCP tool and schema tell agents to follow it and never
+  resend the same commands unchanged (ADR 11).
+- **Agents find dvarapala on their own.** `install.sh` puts a root-owned
+  `/usr/local/bin/sudo` stand-in ahead of `/usr/bin/sudo`: outside an agent
+  sandbox it is plain sudo (`exec /usr/bin/sudo "$@"`); inside one, where the
+  no_new_privs flag makes real sudo fail anyway, it tells the agent to use
+  `request_commands` or `dvarapala` instead. A `/usr/local/bin/sudo` that
+  isn't ours is left alone; `--uninstall` removes only ours (ADR 12). The MCP
+  server's instructions say the same.
+- **Debian and Ubuntu.** Root commands find `/usr/sbin` and `/sbin` (sysctl,
+  usermod, swapon...: separate directories there, links on Arch), and run with
+  `DEBIAN_FRONTEND=noninteractive`, since they have no stdin. `install.sh`
+  installs the dependencies with apt too, as it does with pacman.
+
 ## v1.7.0 -- 2026-11-09
 
 - Every corner is rounded: the website's callouts.

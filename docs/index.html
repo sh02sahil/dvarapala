@@ -25,8 +25,8 @@
 <p class="lead">Let AI agents ask for root commands, and run only the ones you approve.</p>
 <figure class="shloka"><p lang="sa">मोक्षद्वारे द्वारपालाश्चत्वारः परिकीर्तिताः ।<br>शमो विचारः सन्तोषश्चतुर्थः साधुसङ्गमः ॥</p><figcaption>Four guardians stand at the door of freedom: calm, thinking it through, contentment and good company. <cite>Yoga Vāsiṣṭha 2.11.59</cite></figcaption></figure>
 <div class="cta"><a class="btn primary" href="#install">Install</a><a class="btn" href="https://github.com/Theyashsawarkar/dvarapala">GitHub ↗</a>
-<a class="btn" href="changelog.html">What's new in v1.7.0</a></div>
-<div class="meta"><span><b>v1.7.0</b> latest</span><span><b>10</b> releases</span><span><b>10</b> decisions recorded</span><span><b>MIT</b> license</span></div>
+<a class="btn" href="changelog.html">What's new in v1.8.0</a></div>
+<div class="meta"><span><b>v1.8.0</b> latest</span><span><b>11</b> releases</span><span><b>12</b> decisions recorded</span><span><b>MIT</b> license</span></div>
 </div><img class="logo" src="assets/logo.svg" alt="dvarapala logo"></div></section>
 <div class="wrap"><aside class="toc"><b>On this page</b><a class="l2" href="#features">Features</a><a class="l2" href="#install">Install</a><a class="l2" href="#what-you-see">What you see</a><a class="l2" href="#for-agents-sending-a-request">For agents: sending a request</a><a class="l2" href="#for-agents-reading-the-result">For agents: reading the result</a><a class="l2" href="#for-agents-over-mcp">For agents: over MCP</a><a class="l2" href="#telling-your-agent-about-it">Telling your agent about it</a><a class="l2" href="#whats-recorded">What&#x27;s recorded</a><a class="l2" href="#security">Security</a><a class="l2" href="#how-it-works">How it works</a><a class="l2" href="#troubleshooting">Troubleshooting</a><a class="l2" href="#contributing">Contributing</a><a class="l2" href="#license">License</a></aside><article>
 <p align="center">
@@ -42,7 +42,8 @@
 <pre class="code" data-lang="sh"><code>git clone https://github.com/Theyashsawarkar/dvarapala ~/.local/share/dvarapala
 ~/.local/share/dvarapala/install.sh          # asks for sudo once
 dvarapala --why &quot;Test&quot; --cmd &quot;id&quot;            # the window opens; approve it</code></pre>
-<p><code>install.sh</code> installs everything <strong>root-owned</strong> (<code>/usr/local/bin/dvarapala</code>, <code>/usr/local/lib/dvarapala/</code>), so an agent running as your user can't change what the window shows or what it runs. On Arch it installs the dependencies too; elsewhere install them first (Debian/Ubuntu: <code>python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 libnotify-bin</code>; Fedora: <code>python3-gobject gtk4 libadwaita libnotify</code>).</p>
+<p><code>install.sh</code> installs everything <strong>root-owned</strong> (<code>/usr/local/bin/dvarapala</code>, <code>/usr/local/lib/dvarapala/</code>), so an agent running as your user can't change what the window shows or what it runs. On Arch and Debian/Ubuntu it installs the dependencies too; elsewhere install them first (Fedora: <code>python3-gobject gtk4 libadwaita libnotify</code>).</p>
+<p>It also puts a root-owned <code>sudo</code> stand-in in <code>/usr/local/bin</code>, ahead of <code>/usr/bin/sudo</code>. For you it is plain sudo. Inside an agent sandbox (Claude Code, Codex, the Claude desktop app: the no_new_privs flag is set there, so real sudo can't work at all) it tells the agent to send the command to dvarapala instead, so agents find it without being told. It leaves a <code>/usr/local/bin/sudo</code> that isn't its own alone.</p>
 <pre class="code" data-lang="sh"><code>~/.local/share/dvarapala/install.sh --check       # what differs from this clone
 git -C ~/.local/share/dvarapala pull &amp;&amp; ~/.local/share/dvarapala/install.sh   # update
 ~/.local/share/dvarapala/install.sh --uninstall</code></pre>
@@ -64,11 +65,12 @@ git -C ~/.local/share/dvarapala pull &amp;&amp; ~/.local/share/dvarapala/install
 | `n` | normal | Clear every tick (select none) |
 | `Enter` | normal | Run the selected commands (goes to the password first when root needs it) |
 | `i` | normal | Enter insert mode in the password field |
-| `q` | normal | Cancel the request (deny everything) |
-| `Esc` | normal | Cancel the request (deny everything) |
+| `m` | normal | Write a note for the agent (why you deny or untick, or what to do instead) |
+| `q` | normal | Cancel the request (deny everything; asks for an optional note first) |
+| `Esc` | normal | Cancel the request (deny everything; asks for an optional note first) |
 | `Ctrl+h` | normal | Hide the approval window (unanswered, the request stays open on the phone until it expires) |
-| `Enter` | insert | Run the selected commands |
-| `Esc` | insert | Enter normal mode on the commands (Esc again denies) |
+| `Enter` | insert | Run the selected commands (in the note while denying: deny with the note) |
+| `Esc` | insert | Enter normal mode on the commands (Esc again denies; in the note while denying: deny without it) |
 | `Ctrl+h` | insert | Hide the approval window (unanswered) |
 <!-- end keys -->
 <p>Closing the window, Deny or Esc means nothing runs. Three wrong passwords end the request. A request nobody answers expires after 10 minutes.</p>
@@ -102,9 +104,10 @@ EOF</code></pre>
      &quot;duration&quot;: 14.2, &quot;timed_out&quot;: false, &quot;truncated&quot;: false}
   ]
 }</code></pre>
-<div class="table"><table><thead><tr><th><code>status</code></th><th>Meaning</th></tr></thead><tbody><tr><td><code>completed</code></td><td>At least one command was approved and they ran: check each result's <code>state</code></td></tr><tr><td><code>denied</code></td><td>The user pressed Deny, Esc or closed the window; nothing ran</td></tr><tr><td><code>timeout</code></td><td>No answer within 10 minutes; nothing ran</td></tr><tr><td><code>auth_failed</code></td><td>Wrong password three times; nothing ran</td></tr><tr><td><code>error</code></td><td>Bad request or the tool itself failed; see <code>message</code></td></tr></tbody></table></div>
+<div class="table"><table><thead><tr><th><code>status</code></th><th>Meaning</th></tr></thead><tbody><tr><td><code>completed</code></td><td>At least one command was approved and they ran: check each result's <code>state</code></td></tr><tr><td><code>denied</code></td><td>The user pressed Deny, Esc or closed the window; nothing ran (read <code>feedback</code>)</td></tr><tr><td><code>timeout</code></td><td>No answer within 10 minutes; nothing ran</td></tr><tr><td><code>auth_failed</code></td><td>Wrong password three times; nothing ran</td></tr><tr><td><code>error</code></td><td>Bad request or the tool itself failed; see <code>message</code></td></tr></tbody></table></div>
 <div class="table"><table><thead><tr><th><code>state</code></th><th>Meaning</th></tr></thead><tbody><tr><td><code>ok</code></td><td>Ran, exit code 0</td></tr><tr><td><code>failed</code></td><td>Ran, non-zero exit code</td></tr><tr><td><code>skipped</code></td><td>Approved, but an earlier command failed</td></tr><tr><td><code>declined</code></td><td>The user unticked it</td></tr><tr><td><code>not_run</code></td><td>The request was denied, timed out or failed before running</td></tr></tbody></table></div>
 <p>Output is capped at 512 KB per stream (<code>truncated: true</code> when cut).</p>
+<p>If the user wrote a note (the window asks for one when they deny, and has a field for it any time), the result has <code>&quot;feedback&quot;</code>: why they denied or unticked, or what to do instead, e.g. <code>&quot;feedback&quot;: &quot;use the distro package, not the snap&quot;</code>. It's also appended to <code>message</code>. Follow it; never resend the same commands unchanged.</p>
 <div class="table"><table><thead><tr><th>Exit code</th><th>Meaning</th></tr></thead><tbody><tr><td><code>0</code></td><td>Every command was approved and succeeded</td></tr><tr><td><code>1</code></td><td>An approved command failed</td></tr><tr><td><code>2</code></td><td>Bad request or tool error</td></tr><tr><td><code>3</code></td><td>Nothing ran (denied, timeout, wrong password)</td></tr><tr><td><code>4</code></td><td>Some commands were declined; the approved ones succeeded</td></tr></tbody></table></div>
 <h2 id="for-agents-over-mcp"><a class="anchor" href="#for-agents-over-mcp">#</a>For agents: over MCP</h2>
 <p><code>dvarapala --mcp</code> is an MCP server (stdio) with one tool, <code>request_commands</code>, taking the same request object and returning the result as text and <code>structuredContent</code>. It's also listed under its 1.x name, <code>request_root_commands</code> (the same tool: commands without <code>&quot;as&quot;</code> run as root), so existing setups keep working.</p>
@@ -116,7 +119,7 @@ EOF</code></pre>
 }</code></pre>
 <p>The call blocks until the user answers (up to 10 minutes) and the approved commands finish; the window itself closes as soon as the user answers. If your client times out tool calls sooner, raise its limit (Claude Code: the <code>MCP_TOOL_TIMEOUT</code> environment variable, in milliseconds).</p>
 <h2 id="telling-your-agent-about-it"><a class="anchor" href="#telling-your-agent-about-it">#</a>Telling your agent about it</h2>
-<p>Add a few lines to the agent's global instructions (Claude Code: <code>~/.claude/CLAUDE.md</code>; Codex: <code>~/.codex/AGENTS.md</code>; Gemini CLI: <code>~/.gemini/GEMINI.md</code>):</p>
+<p>Often you don't need to: an agent that tries <code>sudo</code> in its sandbox is told by the stand-in to use dvarapala, and an MCP client gets the server's instructions with the tool. To have it reach for dvarapala first, add a few lines to the agent's global instructions (Claude Code: <code>~/.claude/CLAUDE.md</code>; Codex: <code>~/.codex/AGENTS.md</code>; Gemini CLI: <code>~/.gemini/GEMINI.md</code>):</p>
 <pre class="code" data-lang="markdown"><code>- Commands you can&#x27;t run yourself: don&#x27;t ask me to paste them into a
   terminal. Send them to `dvarapala` (JSON on stdin: requester, reason,
   commands: [{cmd, why, as, cwd}]; see `dvarapala --help`): `&quot;as&quot;: &quot;root&quot;`

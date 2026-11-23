@@ -1,0 +1,23 @@
+#!/bin/sh
+# dvarapala's sudo stand-in. install.sh puts it root-owned at
+# /usr/local/bin/sudo, ahead of /usr/bin/sudo in PATH.
+#
+# Outside an agent sandbox it is plain sudo: it hands every argument to
+# /usr/bin/sudo and gets out of the way.
+#
+# Inside one (the no_new_privs flag is set, as in Claude Code, Codex and the
+# Claude desktop app), real sudo can't work at all: the kernel refuses its
+# setuid. Instead of sudo's cryptic error, the agent learns how to ask the
+# user properly, so nobody has to tell each agent about dvarapala.
+if grep -qs '^NoNewPrivs:[[:space:]]*1' /proc/self/status; then
+  cat >&2 <<'EOF'
+sudo: can't work here: this agent sandbox blocks privilege escalation (no_new_privs).
+To run something as root, ask the user through dvarapala instead:
+  - MCP tool:  request_commands (server "dvarapala"), or
+  - shell:     dvarapala --requester "<your name>" --why "<what it does and why>" --cmd "<command>"
+The user approves it in a window; if they deny it, the result's "feedback" says why.
+Don't ask the user to paste commands into a terminal.
+EOF
+  exit 1
+fi
+exec /usr/bin/sudo "$@"

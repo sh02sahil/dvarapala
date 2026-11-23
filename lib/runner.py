@@ -34,10 +34,15 @@ import time
 LOG = "/var/log/dvarapala.log"
 MAX_OUTPUT = 512 * 1024  # per stream, per command
 ENV = {
-    "PATH": "/usr/local/sbin:/usr/local/bin:/usr/bin",
+    # /usr/sbin and /sbin too: on Debian and Ubuntu they are separate
+    # directories (sysctl, usermod, swapon, update-grub live there); on Arch
+    # they are links to /usr/bin, so listing them changes nothing.
+    "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     "HOME": "/root",
     "LANG": "C.UTF-8",
     "TERM": "dumb",
+    # No stdin, so a package manager must never stop to ask (apt, debconf).
+    "DEBIAN_FRONTEND": "noninteractive",
 }
 
 

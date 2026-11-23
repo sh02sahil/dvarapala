@@ -54,7 +54,7 @@ import uuid
 
 DIALOG = "/usr/local/lib/dvarapala/dialog.py"
 LIB = "/usr/local/lib/dvarapala"
-VERSION = "1.7.0"
+VERSION = "1.8.0"
 
 MAX_COMMANDS, MAX_CMD, MAX_WHY, MAX_REASON, MAX_REQUESTER, MAX_CWD = 50, 8000, 500, 2000, 80, 1024
 AS = ("root", "user")
@@ -91,6 +91,10 @@ SCHEMA = {
         "properties": {
             "status": {"enum": ["completed", "denied", "timeout", "auth_failed", "error"]},
             "message": {"type": "string"},
+            "feedback": {"type": "string",
+                         "description": "The user's note, if they wrote one: why they denied or declined, or "
+                                        "what to do instead. Read it and adjust; never resend the same "
+                                        "commands unchanged. Also repeated at the end of 'message'."},
             "approved": {"type": "array", "items": {"type": "integer"}},
             "declined": {"type": "array", "items": {"type": "integer"}},
             "results": {"type": "array", "items": {"type": "object", "properties": {
@@ -256,8 +260,9 @@ MCP_TOOL = {
         "--noconfirm), stopping at the first failure. Returns each command's decision, state, exit code "
         "and output. Blocks until the user answers (up to 10 minutes) and the approved commands finish; "
         "the window closes as soon as the user answers, so tell them what happened. The user may decline some or all "
-        "commands: check each result's 'state'. Never use this to work around a refusal or a permission "
-        "rule the user set."),
+        "commands: check each result's 'state'. If they did, 'feedback' may hold their note (why, or what to "
+        "do instead): follow it, and never resend the same commands unchanged. Never use this to work around "
+        "a refusal or a permission rule the user set."),
     "inputSchema": SCHEMA["request"],
 }
 # The 1.x name, kept so existing setups work: the same tool.
@@ -303,7 +308,9 @@ def mcp_serve():
                 "serverInfo": {"name": "dvarapala", "version": VERSION},
                 "instructions": "Use request_commands for anything that needs root on this machine "
                                 "(as 'root'), or that you can't run yourself (as 'user'), instead of "
-                                "asking the user to paste commands into a terminal."}})
+                                "asking the user to paste commands into a terminal. Plain sudo and "
+                                "pkexec can't work inside an agent sandbox (no_new_privs): don't try "
+                                "them first. If the user denies, read 'feedback' for their reason."}})
         elif method == "ping":
             send({"jsonrpc": "2.0", "id": msg_id, "result": {}})
         elif method == "tools/list":

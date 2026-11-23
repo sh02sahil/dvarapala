@@ -31,11 +31,12 @@ next to this file, vendored); scripts/keybinds.py writes these lines:
 # keybind: Dvarapala/root approval:normal | n | Clear every tick (select none)
 # keybind: Dvarapala/root approval:normal | Enter | Run the selected commands (goes to the password first when root needs it)
 # keybind: Dvarapala/root approval:normal | i | Enter insert mode in the password field
-# keybind: Dvarapala/root approval:normal | q | Cancel the request (deny everything)
-# keybind: Dvarapala/root approval:normal | Esc | Cancel the request (deny everything)
+# keybind: Dvarapala/root approval:normal | m | Write a note for the agent (why you deny or untick, or what to do instead)
+# keybind: Dvarapala/root approval:normal | q | Cancel the request (deny everything; asks for an optional note first)
+# keybind: Dvarapala/root approval:normal | Esc | Cancel the request (deny everything; asks for an optional note first)
 # keybind: Dvarapala/root approval:normal | Ctrl+h | Hide the approval window (unanswered, the request stays open on the phone until it expires)
-# keybind: Dvarapala/root approval:insert | Enter | Run the selected commands
-# keybind: Dvarapala/root approval:insert | Esc | Enter normal mode on the commands (Esc again denies)
+# keybind: Dvarapala/root approval:insert | Enter | Run the selected commands (in the note while denying: deny with the note)
+# keybind: Dvarapala/root approval:insert | Esc | Enter normal mode on the commands (Esc again denies; in the note while denying: deny without it)
 # keybind: Dvarapala/root approval:insert | Ctrl+h | Hide the approval window (unanswered)
 # --- end keybindings ---
 """
@@ -120,13 +121,15 @@ NORMAL_KEYS = [
     Bind("n", "none", "Clear every tick (select none)"),
     Bind("<CR>", "run", "Run the selected commands (goes to the password first when root needs it)"),
     Bind("i", "password", "Enter insert mode in the password field"),
-    Bind("q", "deny", "Cancel the request (deny everything)"),
-    Bind("<Esc>", "deny", "Cancel the request (deny everything)"),
+    Bind("m", "note", "Write a note for the agent (why you deny or untick, or what to do instead)"),
+    Bind("q", "deny", "Cancel the request (deny everything; asks for an optional note first)"),
+    Bind("<Esc>", "deny", "Cancel the request (deny everything; asks for an optional note first)"),
     Bind("<C-h>", "hide", "Hide the approval window (unanswered, the request stays open on the phone until it expires)"),
 ]
 INSERT_KEYS = [
-    Bind("<CR>", "", "Run the selected commands", mode="insert"),
-    Bind("<Esc>", "", "Enter normal mode on the commands (Esc again denies)", mode="insert"),
+    Bind("<CR>", "", "Run the selected commands (in the note while denying: deny with the note)", mode="insert"),
+    Bind("<Esc>", "", "Enter normal mode on the commands (Esc again denies; in the note while denying: "
+                      "deny without it)", mode="insert"),
     Bind("<C-h>", "", "Hide the approval window (unanswered)", mode="insert"),
 ]
 
@@ -151,6 +154,19 @@ def harden():
         ctypes.CDLL("libc.so.6", use_errno=True).prctl(4, 0, 0, 0, 0)  # PR_SET_DUMPABLE
     except OSError:
         pass
+
+
+MAX_NOTE = 2000
+
+
+def feedback_fields(note, message):
+    """The user's note for the agent, added to any result: in "feedback",
+    and repeated in "message" so an agent that reads only the message sees
+    it too. Returns (message, extra result fields)."""
+    note = " ".join((note or "").split())[:MAX_NOTE]
+    if not note:
+        return message, {}
+    return f"{message} The user's note: {note}", {"feedback": note}
 
 
 def write_json_atomic(path, obj):
@@ -204,6 +220,7 @@ class ElevateWindow(Adw.ApplicationWindow):
         self.attempts = 0
         self.done = False          # result written
         self.running = False
+        self.denying = False       # Deny pressed: asking for the optional note
         self.results = [{"index": i, "command": c, "why": w, "as": who, "cwd": cwd,
                          "decision": "approved", "state": "not_run"}
                         for i, (c, w, who, cwd) in enumerate(req.commands)]
@@ -308,6 +325,20 @@ class ElevateWindow(Adw.ApplicationWindow):
         self.error.add_css_class("error")
         body.append(self.error)
 
+        # A note for the agent: why the user denies or unticks, or what to do
+        # instead. Sent with any answer as the result's "feedback". Deny asks
+        # for it once (shown only then), so the agent can correct itself.
+        self.note_prompt = Gtk.Label(xalign=0, wrap=True, visible=False,
+                                     label="Why are you denying this? The agent reads your note and can adjust. "
+                                           "Enter denies with the note, Esc denies without one.")
+        self.note_prompt.add_css_class("reason")
+        body.append(self.note_prompt)
+        self.note = Gtk.Entry(hexpand=True, max_length=MAX_NOTE,
+                              placeholder_text="Note for the agent (optional): why you deny or untick, "
+                                               "or what to do instead")
+        self.note.connect("activate", lambda *_: self.on_note_enter())
+        body.append(self.note)
+
         bottom = Gtk.Box(spacing=8, margin_bottom=8)
         self.password = Gtk.PasswordEntry(show_peek_icon=True, hexpand=True,
                                           placeholder_text="Your password (for the ROOT commands)")
@@ -320,7 +351,8 @@ class ElevateWindow(Adw.ApplicationWindow):
         self.deny_btn = Gtk.Button(label="Deny")
         self.deny_btn.add_css_class("btn")
         self.deny_btn.add_css_class("deny")
-        self.deny_btn.connect("clicked", lambda *_: self.finish_denied("denied", "The user denied the request."))
+        self.deny_btn.connect("clicked", lambda *_: self.deny_now(with_note=False) if self.denying
+                              else self.ask_deny())
         bottom.append(self.deny_btn)
         self.run_btn = Gtk.Button()
         self.run_btn.add_css_class("btn")
@@ -338,7 +370,7 @@ class ElevateWindow(Adw.ApplicationWindow):
         self.mode_label.add_css_class("vimmode")
         foot.append(self.mode_label)
         for keys_, what in (("j k", "move"), ("x", "toggle"), ("Enter", "run"), ("i", "password"),
-                            ("Esc", "back / deny"), ("Ctrl+H", "hide")):
+                            ("m", "note"), ("Esc", "back / deny"), ("Ctrl+H", "hide")):
             if keys_ == "i" and not req.root:
                 continue
             h = Gtk.Label(use_markup=True)
@@ -387,25 +419,33 @@ class ElevateWindow(Adw.ApplicationWindow):
         self.update_run_label()
 
     def update_run_label(self):
+        if self.denying:
+            return   # the buttons say "Deny with note" / "Deny without note" now
         n = len(self.selected())
         self.run_btn.set_label(f"Run {n} selected" if n else "Nothing selected")
         self.run_btn.set_sensitive(n > 0 and not self.running and not self.done)
         if not self.running and not self.done:
             self.password.set_sensitive(self.needs_password())
 
-    def in_password(self):
+    def focus_within(self, widget):
         f = self.get_focus()
         while f is not None:
-            if f is self.password:
+            if f is widget:
                 return True
             f = f.get_parent()
         return False
+
+    def in_password(self):
+        return self.focus_within(self.password)
+
+    def in_note(self):
+        return self.focus_within(self.note)
 
     def update_mode(self, *_):
         f = self.get_focus()
         if f in self.checks:
             self.cursor = self.checks.index(f)   # a click on a card moves the cursor there
-        insert = self.in_password()
+        insert = self.in_password() or self.in_note()
         self.mode_label.set_label("INSERT" if insert else "NORMAL")
         for c, card in enumerate(self.card_boxes):
             (card.add_css_class if (c == self.cursor and not insert) else card.remove_css_class)("cursor")
@@ -442,13 +482,17 @@ class ElevateWindow(Adw.ApplicationWindow):
             return True
         if self.running or self.done:
             return keyval == Gdk.KEY_Escape   # nothing to deny any more; the rest is the widgets' business
-        if self.in_password():
-            # INSERT: the field takes the typing; Esc goes back to the cards.
+        if self.in_password() or self.in_note():
+            # INSERT: the field takes the typing; Esc goes back to the cards,
+            # or, in the note while denying, denies without the note.
             if tok == "<Esc>":
-                self.focus_card(self.cursor)
+                if self.denying and self.in_note():
+                    self.deny_now(with_note=False)
+                else:
+                    self.focus_card(self.cursor)
                 return True
             GLib.idle_add(self.update_mode)
-            return False   # Enter: activate = Run
+            return False   # Enter: activate (password: Run; note: see on_note_enter)
         if tok is None:
             return True
         if gtk_handles(tok, self.keymap):
@@ -476,14 +520,53 @@ class ElevateWindow(Adw.ApplicationWindow):
         elif verb == "password":
             if self.password.get_visible() and self.password.get_sensitive():
                 self.focus_password()
+        elif verb == "note":
+            self.note.grab_focus()
+            self.note.set_position(-1)
+            self.update_mode()
         elif verb == "run":
-            if self.needs_password() and not self.password.get_text():
+            if self.denying:
+                self.deny_now()
+            elif self.needs_password() and not self.password.get_text():
                 self.focus_password()
             else:
                 self.on_run()
         elif verb == "deny":
-            self.finish_denied("denied", "The user denied the request.")
+            self.ask_deny()
         return True
+
+    # ---- denying, with an optional note ------------------------------------
+    def ask_deny(self):
+        """Deny, but first offer the note: the agent learns why and can
+        correct itself. Already written a note, or asked once: deny now."""
+        if self.running or self.done:
+            return
+        if self.denying or self.note.get_text().strip():
+            self.deny_now()
+            return
+        self.denying = True
+        for w in (*self.checks, self.password):
+            w.set_sensitive(False)
+        self.note_prompt.set_visible(True)
+        self.note.set_placeholder_text("Why you're denying, or what the agent should do instead (optional)")
+        self.deny_btn.set_label("Deny without note")
+        self.run_btn.set_label("Deny with note")
+        self.run_btn.remove_css_class("run")
+        self.run_btn.add_css_class("deny")
+        self.run_btn.set_sensitive(True)
+        self.note.grab_focus()
+        self.update_mode()
+
+    def deny_now(self, with_note=True):
+        if not with_note:
+            self.note.set_text("")
+        self.finish_denied("denied", "The user denied the request.")
+
+    def on_note_enter(self):
+        if self.denying:
+            self.deny_now()
+        else:
+            self.focus_card(self.cursor)   # back to NORMAL; Enter in a note never runs anything
 
     def quit(self):
         self.get_application().quit()
@@ -518,6 +601,9 @@ class ElevateWindow(Adw.ApplicationWindow):
 
     # ---- running ---------------------------------------------------------
     def on_run(self):
+        if self.denying:
+            self.deny_now()   # the Run button reads "Deny with note" now
+            return
         if self.running or self.done or not self.selected():
             return
         pw = self.password.get_text()
@@ -680,7 +766,8 @@ class ElevateWindow(Adw.ApplicationWindow):
         self.running = False
         self.remote.send({"t": "done", "status": status})
         self.remote.close()
-        result = {"id": self.req.id, "status": status, "message": message,
+        message, extra = feedback_fields(self.note.get_text(), message)
+        result = {"id": self.req.id, "status": status, "message": message, **extra,
                   "approved": [r["index"] for r in self.results if r["decision"] == "approved" and status == "completed"],
                   "declined": [r["index"] for r in self.results if r["decision"] == "declined"],
                   "results": self.results}
@@ -696,6 +783,7 @@ class ElevateWindow(Adw.ApplicationWindow):
             os.makedirs(os.path.dirname(STATE_LOG), exist_ok=True)
             entry = {"time": time.time(), "id": self.req.id, "requester": self.req.requester,
                      "reason": self.req.reason, "status": result["status"],
+                     **({"feedback": result["feedback"]} if "feedback" in result else {}),
                      "commands": [{"cmd": r["command"], "as": r["as"], "cwd": r["cwd"], "decision": r["decision"],
                                    "state": r["state"], "exit_code": r.get("exit_code")} for r in self.results]}
             with open(STATE_LOG, "a") as f:

@@ -107,10 +107,16 @@ dvarapala --why "Test" --cmd "id"            # the window opens; approve it
 
 `install.sh` installs everything **root-owned** (`/usr/local/bin/dvarapala`,
 `/usr/local/lib/dvarapala/`), so an agent running as your user can't change
-what the window shows or what it runs. On Arch it installs the dependencies
-too; elsewhere install them first (Debian/Ubuntu: `python3-gi gir1.2-gtk-4.0
-gir1.2-adw-1 libnotify-bin`; Fedora: `python3-gobject gtk4 libadwaita
-libnotify`).
+what the window shows or what it runs. On Arch and Debian/Ubuntu it installs
+the dependencies too; elsewhere install them first (Fedora: `python3-gobject
+gtk4 libadwaita libnotify`).
+
+It also puts a root-owned `sudo` stand-in in `/usr/local/bin`, ahead of
+`/usr/bin/sudo`. For you it is plain sudo. Inside an agent sandbox (Claude
+Code, Codex, the Claude desktop app: the no_new_privs flag is set there, so
+real sudo can't work at all) it tells the agent to send the command to
+dvarapala instead, so agents find it without being told. It leaves a
+`/usr/local/bin/sudo` that isn't its own alone.
 
 ```sh
 ~/.local/share/dvarapala/install.sh --check       # what differs from this clone
@@ -157,11 +163,12 @@ password field goes back to the cards, `Esc` on the cards denies.
 | `n` | normal | Clear every tick (select none) |
 | `Enter` | normal | Run the selected commands (goes to the password first when root needs it) |
 | `i` | normal | Enter insert mode in the password field |
-| `q` | normal | Cancel the request (deny everything) |
-| `Esc` | normal | Cancel the request (deny everything) |
+| `m` | normal | Write a note for the agent (why you deny or untick, or what to do instead) |
+| `q` | normal | Cancel the request (deny everything; asks for an optional note first) |
+| `Esc` | normal | Cancel the request (deny everything; asks for an optional note first) |
 | `Ctrl+h` | normal | Hide the approval window (unanswered, the request stays open on the phone until it expires) |
-| `Enter` | insert | Run the selected commands |
-| `Esc` | insert | Enter normal mode on the commands (Esc again denies) |
+| `Enter` | insert | Run the selected commands (in the note while denying: deny with the note) |
+| `Esc` | insert | Enter normal mode on the commands (Esc again denies; in the note while denying: deny without it) |
 | `Ctrl+h` | insert | Hide the approval window (unanswered) |
 <!-- end keys -->
 
@@ -238,7 +245,7 @@ user's answer.
 | `status` | Meaning |
 |---|---|
 | `completed` | At least one command was approved and they ran: check each result's `state` |
-| `denied` | The user pressed Deny, Esc or closed the window; nothing ran |
+| `denied` | The user pressed Deny, Esc or closed the window; nothing ran (read `feedback`) |
 | `timeout` | No answer within 10 minutes; nothing ran |
 | `auth_failed` | Wrong password three times; nothing ran |
 | `error` | Bad request or the tool itself failed; see `message` |
@@ -252,6 +259,12 @@ user's answer.
 | `not_run` | The request was denied, timed out or failed before running |
 
 Output is capped at 512 KB per stream (`truncated: true` when cut).
+
+If the user wrote a note (the window asks for one when they deny, and has a
+field for it any time), the result has `"feedback"`: why they denied or
+unticked, or what to do instead, e.g. `"feedback": "use the distro package,
+not the snap"`. It's also appended to `message`. Follow it; never resend the
+same commands unchanged.
 
 | Exit code | Meaning |
 |---|---|
@@ -288,7 +301,10 @@ times out tool calls sooner, raise its limit (Claude Code: the
 
 ## Telling your agent about it
 
-Add a few lines to the agent's global instructions (Claude Code:
+Often you don't need to: an agent that tries `sudo` in its sandbox is told
+by the stand-in to use dvarapala, and an MCP client gets the server's
+instructions with the tool. To have it reach for dvarapala first, add a few
+lines to the agent's global instructions (Claude Code:
 `~/.claude/CLAUDE.md`; Codex: `~/.codex/AGENTS.md`; Gemini CLI:
 `~/.gemini/GEMINI.md`):
 
