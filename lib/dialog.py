@@ -103,6 +103,82 @@ def feedback_fields(note, message):
     return f"{message} The user's note: {note}", {"feedback": note}
 
 
+def journal(msg):
+    """One line for the user journal: the window runs as a user service with
+    SyslogIdentifier=dvarapala, so `journalctl --user -t dvarapala` shows it.
+    Never the password."""
+    print(msg, file=sys.stderr, flush=True)
+
+
+class Notifier:
+    """The request's desktop notification. It comes first, instead of the
+    window, so a request never takes the keyboard from what the user is doing:
+    clicking it (or its Review button) opens the window. It goes away by
+    itself once the request is answered, however that happens. Dismissing it
+    is a deny, as closing the window is (ADR 15)."""
+    DEST, PATH, IFACE = "org.freedesktop.Notifications", "/org/freedesktop/Notifications", \
+        "org.freedesktop.Notifications"
+    DISMISSED = 2   # NotificationClosed reason: dismissed by the user
+
+    def __init__(self, on_open, on_dismiss):
+        self.on_open, self.on_dismiss = on_open, on_dismiss
+        self.id = 0
+        self.token = None
+        self.opened = False
+        self.bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        # Only signals from the notification server itself.
+        for signal, handler in (("ActionInvoked", self._action), ("ActivationToken", self._token),
+                                ("NotificationClosed", self._closed)):
+            self.bus.signal_subscribe(self.DEST, self.IFACE, signal, self.PATH, None,
+                                      Gio.DBusSignalFlags.NONE, handler)
+
+    def show(self, summary, body):
+        """True if the notification is up (else the caller opens the window)."""
+        hints = {"urgency": GLib.Variant("y", 2), "desktop-entry": GLib.Variant("s", APP_ID)}
+        params = GLib.Variant("(susssasa{sv}i)", ("dvarapala", 0, "dialog-password-symbolic", summary,
+                                                  body, ["default", "Review", "review", "Review…"],
+                                                  hints, 0))
+        try:
+            self.id = self.bus.call_sync(self.DEST, self.PATH, self.IFACE, "Notify", params,
+                                         GLib.VariantType("(u)"), Gio.DBusCallFlags.NONE, 5000,
+                                         None).unpack()[0]
+        except GLib.Error as e:
+            journal(f"no notification server ({e.message}): opening the window directly")
+            return False
+        return True
+
+    def close(self):
+        if self.id:
+            nid, self.id = self.id, 0
+            try:
+                self.bus.call_sync(self.DEST, self.PATH, self.IFACE, "CloseNotification",
+                                   GLib.Variant("(u)", (nid,)), None, Gio.DBusCallFlags.NONE, 5000, None)
+            except GLib.Error:
+                pass
+
+    def _token(self, _bus, _sender, _path, _iface, _signal, params):
+        nid, token = params.unpack()
+        if nid == self.id:
+            self.token = token
+
+    def _action(self, _bus, _sender, _path, _iface, _signal, params):
+        nid, _key = params.unpack()
+        if nid == self.id and self.id:
+            # The server closes a clicked notification itself, often as
+            # "dismissed": remember the click so that close isn't a deny.
+            self.opened = True
+            self.id = 0
+            self.on_open(self.token)
+
+    def _closed(self, _bus, _sender, _path, _iface, _signal, params):
+        nid, reason = params.unpack()
+        if nid != self.id or not self.id:
+            return
+        self.id = 0
+        if reason == self.DISMISSED and not self.opened:
+            self.on_dismiss()
+
+
 def write_json_atomic(path, obj):
     tmp = path + ".tmp"
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -256,6 +332,32 @@ class ApprovalWindow(Adw.Window):
         self.tick()
         GLib.timeout_add_seconds(1, self.tick)
         (self.password if req.root else self.run_btn).grab_focus()
+
+        journal(f"request {req.id} from {req.requester}: {summary(req.commands)}"
+                + (f" ({req.reason})" if req.reason else ""))
+        for i, (cmd, why, as_, cwd) in enumerate(req.commands):
+            journal(f"  {i + 1}. [{as_}{'' if as_ == 'root' else ' in ' + cwd}] {cmd}  -- {why}")
+        self.notifier = Notifier(self.open_from_notification,
+                                 lambda: self.finish_denied("denied", "The user dismissed the notification."))
+
+    def ask(self):
+        """Notification first; the window opens when it's clicked. Without a
+        notification server, the window opens straight away."""
+        heading = "Root access requested" if self.req.root else "Approval requested"
+        body = GLib.markup_escape_text(f"{self.req.requester} wants to run {summary(self.req.commands)}. "
+                                       "Click to review.")
+        if self.notifier.show(heading, body):
+            journal("notification shown; the window opens when it's clicked")
+        else:
+            self.present()
+
+    def open_from_notification(self, token):
+        if self.done or self.running:
+            return
+        journal("opened from the notification")
+        if token:
+            self.set_startup_id(token)   # the click's activation token: focus is given, not taken
+        self.present()
 
     def command_row(self, i, cmd, why, as_, cwd):
         row = Gtk.ListBoxRow(activatable=True)
@@ -484,6 +586,8 @@ class ApprovalWindow(Adw.Window):
             if i not in chosen:
                 r["state"] = "declined"
         self.set_visible(False)
+        self.notifier.close()
+        journal(f"approved {len(chosen)} of {len(self.req.commands)}; running")
         self.remote.send({"t": "done", "status": "approved"})
         self.remote.close()
         threading.Thread(target=self.run_all, args=(pw, chosen), daemon=True).start()
@@ -590,9 +694,15 @@ class ApprovalWindow(Adw.Window):
             return
         self.done = True
         self.running = False
+        self.notifier.close()
         self.remote.send({"t": "done", "status": status})
         self.remote.close()
         message, extra = feedback_fields(self.note.get_text(), message)
+        journal(f"{status}: {message}")
+        for r in self.results:
+            if r["state"] in ("ok", "failed", "skipped"):
+                journal(f"  {r['index'] + 1}. {r['state']}"
+                        + (f" (exit {r['exit_code']})" if "exit_code" in r else ""))
         result = {"id": self.req.id, "status": status, "message": message, **extra,
                   "approved": [r["index"] for r in self.results if r["decision"] == "approved" and status == "completed"],
                   "declined": [r["index"] for r in self.results if r["decision"] == "declined"],
@@ -643,7 +753,8 @@ def main():
     Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider,
                                               Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
     app = Adw.Application(application_id=APP_ID, flags=Gio.ApplicationFlags.NON_UNIQUE)
-    app.connect("activate", lambda a: ApprovalWindow(a, req, outdir).present())
+    # Hidden at first: the notification comes first, the window on its click.
+    app.connect("activate", lambda a: ApprovalWindow(a, req, outdir).ask())
     app.run([])
     return 0
 

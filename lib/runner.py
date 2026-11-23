@@ -65,6 +65,16 @@ def audit(entry):
             f.write(json.dumps(entry) + "\n")
     except OSError as e:
         print(f"dvarapala runner: can't write {LOG}: {e}", file=sys.stderr)
+    # The same record in the system journal (journalctl -t dvarapala-root),
+    # where the agent can't edit it either.
+    try:
+        import syslog
+        syslog.openlog("dvarapala-root", syslog.LOG_PID, syslog.LOG_AUTHPRIV)
+        state = entry.get("result") or f"exit {entry.get('exit_code')}"
+        syslog.syslog(syslog.LOG_NOTICE, f"request {entry.get('id')} from {entry.get('requester')}: "
+                                         f"ran as root: {entry.get('command')!r} -> {state}")
+    except Exception:
+        pass
 
 
 def main():

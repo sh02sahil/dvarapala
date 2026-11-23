@@ -54,6 +54,27 @@ class Feedback(unittest.TestCase):
         self.assertIn("feedback", (ROOT / "bin" / "dvarapala").read_text().split("MCP_TOOL = {", 1)[1])
 
 
+class DialogUnit(unittest.TestCase):
+    def test_window_unit_logs_as_dvarapala(self):
+        # bin/dvarapala's helper, read out of it without running anything.
+        tree = ast.parse((ROOT / "bin" / "dvarapala").read_text())
+        fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "dialog_unit_cmd")
+        ns = {"DIALOG": "/usr/local/lib/dvarapala/dialog.py"}
+        exec(compile(ast.Module([fn], []), "dvarapala", "exec"), ns)
+        cmd = ns["dialog_unit_cmd"]("dvarapala-123", {"HOME": "/home/u"}, "/run/user/1/dvarapala/123")
+        self.assertIn("--property=SyslogIdentifier=dvarapala", cmd)
+        self.assertIn("--user", cmd)
+        # env -i, then only the given environment: nothing from the caller.
+        i = cmd.index("/usr/bin/env")
+        self.assertEqual(cmd[i + 1:i + 3], ["-i", "HOME=/home/u"])
+        self.assertEqual(cmd[-3:], ["-I", "/usr/local/lib/dvarapala/dialog.py", "/run/user/1/dvarapala/123"])
+
+    def test_bin_no_longer_posts_its_own_notification(self):
+        # The window posts it (and closes it when answered); a second one from
+        # bin/dvarapala would be the one that never goes away.
+        self.assertNotIn("notify-send", (ROOT / "bin" / "dvarapala").read_text())
+
+
 class RunnerEnvironment(unittest.TestCase):
     def test_sbin_and_noninteractive(self):
         spec = importlib.util.spec_from_file_location("runner", ROOT / "lib" / "runner.py")

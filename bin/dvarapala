@@ -54,7 +54,7 @@ import uuid
 
 DIALOG = "/usr/local/lib/dvarapala/dialog.py"
 LIB = "/usr/local/lib/dvarapala"
-VERSION = "1.9.1"
+VERSION = "1.10.0"
 
 MAX_COMMANDS, MAX_CMD, MAX_WHY, MAX_REASON, MAX_REQUESTER, MAX_CWD = 50, 8000, 500, 2000, 80, 1024
 AS = ("root", "user")
@@ -179,6 +179,17 @@ def session_env():
     return env
 
 
+def dialog_unit_cmd(unit, env, rdir):
+    """The approval window as a transient user service: not a child of this
+    process (or of the agent), env -i drops anything the caller set, and its
+    lines land in the user journal as `dvarapala` (journalctl --user -t dvarapala)."""
+    return ["systemd-run", "--user", "--quiet", "--collect", f"--unit={unit}",
+            f"--description=dvarapala approval request {unit.removeprefix('dvarapala-')}",
+            "--property=SyslogIdentifier=dvarapala",
+            "--", "/usr/bin/env", "-i", *(f"{k}={v}" for k, v in env.items()),
+            "/usr/bin/python3", "-I", DIALOG, rdir]
+
+
 def request(req):
     """Show the approval window for a validated request; return the result."""
     if not os.path.exists(DIALOG):
@@ -193,20 +204,11 @@ def request(req):
     with open(os.path.join(rdir, "request.json"), "w") as f:
         json.dump({"id": rid, **req}, f)
     unit = f"dvarapala-{rid}"
-    # A transient user service: the dialog isn't a child of this process
-    # (or of the agent), and env -i drops anything the caller set.
-    cmd = ["systemd-run", "--user", "--quiet", "--collect", f"--unit={unit}",
-           "--", "/usr/bin/env", "-i", *(f"{k}={v}" for k, v in env.items()),
-           "/usr/bin/python3", "-I", DIALOG, rdir]
-    p = subprocess.run(cmd, capture_output=True, text=True)
+    p = subprocess.run(dialog_unit_cmd(unit, env, rdir), capture_output=True, text=True)
     if p.returncode != 0:
         raise BadRequest(f"couldn't start the approval window: {p.stderr.strip()}")
-    if shutil.which("notify-send"):
-        subprocess.run(["notify-send", "-a", "dvarapala", "-u", "critical", "-i", "security-high",
-                        "Root access requested" if any(c["as"] == "root" for c in req["commands"])
-                        else "Approval requested",
-                        f"{req.get('requester') or 'An AI agent'} wants to run {summary(req['commands'])}."],
-                       capture_output=True)
+    # The window posts the request's notification itself (and opens only when
+    # it's clicked), so the notification goes away the moment it's answered.
     # The window enforces the 10-minute expiry itself (it writes a
     # "timeout" result), so wait for a result or for the window to exit.
     result_path = os.path.join(rdir, "result.json")

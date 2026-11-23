@@ -129,7 +129,12 @@ link to `dvarapala`, so agents and notes that still use it keep working.
 
 ## What you see
 
-A window opens with everything the agent asked for: each command exactly as
+A request first arrives as a notification, so it never takes the keyboard from
+what you're doing; click it (or **Review**) and the window opens. The
+notification goes away by itself once the request is answered; dismissing it
+denies the request ([ADR 15](docs/adr/0015-notification-first.md)).
+
+The window shows everything the agent asked for: each command exactly as
 it will run, its reason, a checkbox, and a badge saying how it runs:
 **ROOT** (as root, from `/`) or **YOU** (as you, in the folder shown under
 it). The top bar says how many of each. Untick anything you don't want,
@@ -302,6 +307,11 @@ lines to the agent's global instructions (Claude Code:
 ```
 
 ## What's recorded
+
+In the journal: `journalctl --user -t dvarapala` shows each request, the
+notification, when you opened it, your answer and your note;
+`journalctl -t dvarapala-root` shows each command that ran as root and its
+exit code.
 
 Every command that ran as root, with its exit code, goes to
 `/var/log/dvarapala.log`: root-only, so the agent can't edit it. Every

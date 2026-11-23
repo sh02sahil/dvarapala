@@ -2,6 +2,22 @@
 
 Newest first. Releases are tags (`vX.Y.Z`) with `VERSION` in `bin/dvarapala`.
 
+## v1.10.0 -- 2026-11-23
+
+- **Notification first.** A request no longer opens a window that takes the
+  keyboard focus: the window posts a notification and stays hidden until you
+  click it (or its Review button), then opens with the click's activation
+  token. Dismissing the notification denies the request, as closing the window
+  does. Without a notification server the window opens straight away (ADR 15).
+- **The notification goes away by itself** once the request is answered:
+  approved, denied, timed out, answered on the phone. `bin/dvarapala` no longer
+  sends its own critical notification, the one that never closed.
+- **In the journal.** The window runs with `SyslogIdentifier=dvarapala`:
+  `journalctl --user -t dvarapala` shows each request and its commands, the
+  notification, when it was opened, the answer and the user's note. The root
+  runner logs each root command and its exit code to the system journal as
+  `dvarapala-root`, next to `/var/log/dvarapala.log`.
+
 ## v1.9.1 -- 2026-11-23
 
 - **Steel grey, like GNOME Shell's own prompts.** The window takes Adwaita's
