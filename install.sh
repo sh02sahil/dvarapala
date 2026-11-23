@@ -10,11 +10,9 @@
 # Installs:
 #   /usr/local/bin/dvarapala                 the CLI / MCP server agents call
 #   /usr/local/lib/dvarapala/dialog.py       the approval window (GTK 4)
-#   /usr/local/lib/dvarapala/theme.py        its look and the theme readability check
 #   /usr/local/lib/dvarapala/remote.py       answering from the phone, through ekatva
 #   /usr/local/lib/dvarapala/runner.py       runs the approved commands as root
 #   /usr/local/lib/dvarapala/userrun.py      runs the approved commands as you
-#   /usr/local/lib/dvarapala/keys.py         the window's vim keys (Vyom's keys module, vendored)
 #   /usr/local/lib/dvarapala/{config,data}/  empty XDG dirs for the window, so
 #                                          your GTK CSS can't restyle it
 #   /usr/local/bin/{anumati,vayu-elevate}  -> dvarapala (its old names, kept working)
@@ -70,12 +68,18 @@ fi
 files=(
   "bin/dvarapala:/usr/local/bin/dvarapala"
   "lib/dialog.py:$lib/dialog.py"
-  "lib/theme.py:$lib/theme.py"
   "lib/remote.py:$lib/remote.py"
   "lib/runner.py:$lib/runner.py"
   "lib/userrun.py:$lib/userrun.py"
-  "lib/keys.py:$lib/keys.py"
 )
+# Modules older versions installed and this one no longer uses (the Vyom
+# theme and vim keys, before the window became stock Adwaita: ADR 13).
+for gone in theme.py keys.py; do
+  if [ -e "$lib/$gone" ]; then
+    differs "$lib/$gone (no longer used, to remove)"
+    $check || sudo rm -f "$lib/$gone"
+  fi
+done
 $sudo_hint && files+=("lib/sudo-hint:/usr/local/bin/sudo")
 for pair in "${files[@]}"; do
   src=$here/${pair%%:*} dst=${pair#*:}

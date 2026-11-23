@@ -2,6 +2,24 @@
 
 Newest first. Releases are tags (`vX.Y.Z`) with `VERSION` in `bin/dvarapala`.
 
+## v1.9.0 -- 2026-11-23
+
+- **The window looks like GNOME's own password prompts.** Stock libadwaita in
+  the system's light or dark style and accent colour: a key icon, a heading
+  ("Authentication Required"), who is asking and the agent's reason, the
+  commands in a rounded list (each with its reason, a ROOT or YOU badge and a
+  checkbox), the password and the note for the agent as entry rows, and Cancel /
+  Authenticate as two wide buttons. No title bar; the whole window drags. The
+  button says how many of the commands you've left ticked ("Authenticate (2 of
+  3)"). A wrong password says so under the fields and marks the field red.
+- **GNOME's keys.** Tab moves, Space ticks, Enter authenticates (or goes to the
+  password first), Esc denies, asking once for the note; Esc again denies
+  without one. The vim keymap, its footer and Ctrl+H are gone.
+- The deny step hides the password field (nothing will run) and turns the
+  buttons into "Deny Without Note" and "Deny".
+- Removed `lib/theme.py`, `lib/keys.py`, `scripts/keybinds.py` and their tests;
+  `install.sh` deletes their installed copies. ADR 13 supersedes ADR 6.
+
 ## v1.8.0 -- 2026-11-23
 
 - **Tell the agent why.** A "Note for the agent" field under the commands:

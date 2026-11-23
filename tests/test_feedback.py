@@ -1,6 +1,6 @@
 """The user's note for the agent ("feedback"), the root runner's environment
 on Debian/Ubuntu, and the sudo stand-in. No window, no root: pure functions
-read out of lib/dialog.py without GTK (as test_keys.py does), and scripts run
+read out of lib/dialog.py without GTK (by parsing it), and scripts run
 as subprocesses."""
 import ast
 import importlib.util

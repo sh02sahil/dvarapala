@@ -1,6 +1,6 @@
 # 6. Themed like the desktop, but nothing can be made hard to read
 
-**Status:** Accepted  
+**Status:** Superseded by [13](0013-stock-adwaita.md)  
 **Date:** 2026-10-24
 
 ## Context

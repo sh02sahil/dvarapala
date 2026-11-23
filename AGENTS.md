@@ -16,11 +16,9 @@ called vayu-elevate until v1.1.0 (`/usr/local/bin/vayu-elevate` is a link).
 - Security first: what the window shows is exactly what runs; the agent never
   sees the password; nothing is left with root access afterwards. Read
   SECURITY.md before changing the flow.
-- Keys are data (`NORMAL_KEYS`/`INSERT_KEYS` in `lib/dialog.py`, resolved by
-  Vyom's keys module, vendored as `lib/keys.py`: never edit it here, run Vyom's
-  `scripts/vendor-keys.sh lib/keys.py`). After changing a key run
-  `scripts/keybinds.py`: it writes the `# keybind:` lines in the docstring and
-  the README table (CI checks both). No Space leader here, on purpose.
+- The window is stock libadwaita (ADR 13): no colours of its own, no user CSS
+  (root-owned XDG dirs), GNOME's own keys. Keep it that way: what makes it
+  trustworthy is that it looks like the system's password prompts.
 - Every change: a CHANGELOG.md entry; releases are tags with `VERSION` in
   `bin/dvarapala` bumped. `python -m py_compile bin/dvarapala lib/*.py`,
   `python -m unittest discover -s tests` and `shellcheck install.sh` must pass.
