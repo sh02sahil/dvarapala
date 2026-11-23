@@ -2,6 +2,15 @@
 
 Newest first. Releases are tags (`vX.Y.Z`) with `VERSION` in `bin/dvarapala`.
 
+## v1.9.1 -- 2026-11-23
+
+- **Steel grey, like GNOME Shell's own prompts.** The window takes Adwaita's
+  dialog background (`#36363a` in dark, as the shell's keyring and polkit
+  prompts), neutral buttons with the shell's 12px corners instead of an
+  accent-filled Authenticate, and Adwaita's slate accent for the checkboxes and
+  focus ring, whatever the system accent is. All of them are Adwaita's own
+  palette colours (ADR 14).
+
 ## v1.9.0 -- 2026-11-23
 
 - **The window looks like GNOME's own password prompts.** Stock libadwaita in

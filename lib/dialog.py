@@ -41,10 +41,18 @@ EXPIRES_AFTER = 600          # seconds the request stays open (then: denied)
 MAX_ATTEMPTS = 3             # wrong passwords before the request fails
 STATE_LOG = os.path.join(pwd.getpwuid(os.getuid()).pw_dir, ".local/state/dvarapala/requests.jsonl")
 
-# Layout and fonts only. Every colour comes from Adwaita itself (its light and
-# dark styles and the system accent), which keeps all text readable: nothing
-# here, and no user CSS, can make a command hard to see.
+# Layout, fonts, and which of Adwaita's own colours to use. Every colour is an
+# Adwaita palette variable (in its light and dark styles), which keeps all text
+# readable: nothing here, and no user CSS, can make a command hard to see.
+# Like GNOME Shell's own prompts (keyring, polkit): the dialog background,
+# neutral buttons with 12px corners, and the slate accent (ADR 14).
 CSS = """
+window.dvarapala {
+  background-color: var(--dialog-bg-color);
+  color: var(--dialog-fg-color);
+  --accent-bg-color: var(--accent-slate);
+}
+.dvarapala-btn { border-radius: 12px; padding: 10px 12px; }
 .dvarapala-row { padding: 10px 12px; }
 .dvarapala-cmd { font-family: monospace; }
 .dvarapala-badge {
@@ -148,6 +156,7 @@ class ApprovalWindow(Adw.Window):
         self.user = pwd.getpwuid(os.getuid()).pw_name
         self.checks, self.rows = [], []
         self.set_default_size(500, -1)
+        self.add_css_class("dvarapala")
         self.connect("close-request", self.on_close)
 
         # Capture phase: the window sees Esc/Enter before any child.
@@ -217,13 +226,13 @@ class ApprovalWindow(Adw.Window):
 
         buttons = Gtk.Box(spacing=12, homogeneous=True, margin_top=8)
         self.cancel_btn = Gtk.Button(label="Cancel")
-        self.cancel_btn.add_css_class("pill")
+        self.cancel_btn.add_css_class("dvarapala-btn")
         self.cancel_btn.connect("clicked", lambda *_: self.deny_now(with_note=False) if self.denying
                                 else self.ask_deny())
         buttons.append(self.cancel_btn)
+        # Neutral, like the shell's prompts: no accent-filled button.
         self.run_btn = Gtk.Button()
-        self.run_btn.add_css_class("pill")
-        self.run_btn.add_css_class("suggested-action")
+        self.run_btn.add_css_class("dvarapala-btn")
         self.run_btn.connect("clicked", lambda *_: self.on_run())
         buttons.append(self.run_btn)
         box.append(buttons)
@@ -375,7 +384,6 @@ class ApprovalWindow(Adw.Window):
         self.note.set_title("Why are you denying this? (optional)")
         self.cancel_btn.set_label("Deny Without Note")
         self.run_btn.set_label("Deny")
-        self.run_btn.remove_css_class("suggested-action")
         self.run_btn.add_css_class("destructive-action")
         self.run_btn.set_sensitive(True)
         self.note.grab_focus()

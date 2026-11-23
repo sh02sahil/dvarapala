@@ -140,9 +140,11 @@ done: the ticked commands run on without it, in order, stopping at the first
 failure, and it's the agent that waits for the results, failures included
 ([ADR 9](docs/adr/0009-window-closes-on-answer.md)).
 
-It looks like GNOME's own password prompts: stock libadwaita, in your
-system's light or dark style and accent colour, with nothing of its own
-that could change how readable it is ([ADR 13](docs/adr/0013-stock-adwaita.md)).
+It looks like GNOME's own password prompts: stock libadwaita in your
+system's light or dark style, steel grey like the shell's keyring and polkit
+prompts (Adwaita's dialog background, neutral buttons, its slate accent), with
+no colours of its own that could change how readable it is
+([ADR 13](docs/adr/0013-stock-adwaita.md), [ADR 14](docs/adr/0014-match-the-shell-prompts.md)).
 
 The keys are GNOME's: Tab moves, Space ticks or unticks the command you're
 on, Enter authenticates (or goes to the password first), Esc denies.
